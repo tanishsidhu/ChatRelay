@@ -115,6 +115,68 @@ Continue implementation verification.
     #expect(extracted.contains("Continue implementation verification."))
 }
 
+@Test func extractsListDetailsWhenJoinedInDocumentOrder() throws {
+    let markers = HandoffMarkers(nonce: "LISTORDER1")
+    // ChatGPT nests list items under AXList. Breadth-first collection emits those
+    // items after the end marker; depth-first document order keeps them inside.
+    let breadthFirstBroken = """
+    \(markers.begin)
+    # Conversation Handoff
+    ## Topic
+    NotesBar safety
+    ## User Goal
+    Assess safety.
+    ## Essential Context
+    Menu bar Obsidian access.
+    ## Decisions and Reasoning
+    The safety assessment was based on these points:
+    The prior recommendation was to:
+    ## Preferences and Constraints
+    Local only.
+    ## Important Facts or Examples
+    None.
+    ## Open Questions
+    None.
+    ## Recommended Continuation
+    Verify the release.
+    \(markers.end)
+    NotesBar was described as open source, MIT licensed, and written in Swift.
+    Install only from the documented Homebrew cask or official GitHub Releases.
+    """
+    let documentOrder = """
+    \(markers.begin)
+    # Conversation Handoff
+    ## Topic
+    NotesBar safety
+    ## User Goal
+    Assess safety.
+    ## Essential Context
+    Menu bar Obsidian access.
+    ## Decisions and Reasoning
+    The safety assessment was based on these points:
+    NotesBar was described as open source, MIT licensed, and written in Swift.
+    The prior recommendation was to:
+    Install only from the documented Homebrew cask or official GitHub Releases.
+    ## Preferences and Constraints
+    Local only.
+    ## Important Facts or Examples
+    None.
+    ## Open Questions
+    None.
+    ## Recommended Continuation
+    Verify the release.
+    \(markers.end)
+    """
+
+    let broken = try HandoffParser.extract(from: breadthFirstBroken, markers: markers)
+    #expect(!broken.contains("MIT licensed"))
+    #expect(!broken.contains("Homebrew"))
+
+    let extracted = try HandoffParser.extract(from: documentOrder, markers: markers)
+    #expect(extracted.contains("MIT licensed"))
+    #expect(extracted.contains("Homebrew"))
+}
+
 @Test func storeAtomicallyReplacesSingleDocument() throws {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent("handoff-store-tests-\(UUID().uuidString)", isDirectory: true)

@@ -85,15 +85,20 @@ public enum AccessibilityBridge {
             roots.append(application)
         }
 
-        var queue = roots
-        var index = 0
+        // Depth-first preorder preserves document order. Breadth-first visitation
+        // emits nested list items after later sibling markers, which drops ChatGPT
+        // bullet content from the marked handoff span.
+        var stack = Array(roots.reversed())
         var strings: [String] = []
+        var visited = 0
         var byteCount = 0
         let maximumCollectedBytes = 4 * 1_024 * 1_024
 
-        while index < queue.count, index < maximumElements, byteCount < maximumCollectedBytes {
-            let element = queue[index]
-            index += 1
+        while let element = stack.popLast(),
+              visited < maximumElements,
+              byteCount < maximumCollectedBytes
+        {
+            visited += 1
 
             for attribute in [kAXValueAttribute, kAXDescriptionAttribute, kAXTitleAttribute] {
                 if let value = stringAttribute(element, attribute), !value.isEmpty {
@@ -102,8 +107,8 @@ public enum AccessibilityBridge {
                 }
             }
 
-            if let children = elementsAttribute(element, kAXChildrenAttribute) {
-                queue.append(contentsOf: children)
+            if let children = elementsAttribute(element, kAXChildrenAttribute), !children.isEmpty {
+                stack.append(contentsOf: children.reversed())
             }
         }
 
