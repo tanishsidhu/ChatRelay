@@ -31,8 +31,10 @@ public final class ResponseScanner: @unchecked Sendable {
                 return
             }
 
-            let text = AccessibilityBridge.collectWindowText(
-                processIdentifier: target.processIdentifier
+            let text = HandoffParser.normalizeProviderRenderedMarkers(
+                in: AccessibilityBridge.collectWindowText(
+                    processIdentifier: target.processIdentifier
+                )
             )
             guard text.contains(markers.end) else { return }
 

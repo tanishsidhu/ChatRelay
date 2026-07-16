@@ -101,6 +101,12 @@ Continue implementation verification.
     suffix
     """
 
+    // Live scanning gates on the closing marker before extraction. Raw ChatGPT
+    // Accessibility text does not contain it until fragments are rebuilt.
+    #expect(!fragmentedWindow.contains(markers.end))
+    let normalized = HandoffParser.normalizeProviderRenderedMarkers(in: fragmentedWindow)
+    #expect(normalized.contains(markers.end))
+
     let extracted = try HandoffParser.extractLatest(from: fragmentedWindow)
 
     for heading in HandoffProtocol.requiredHeadings {
