@@ -83,6 +83,32 @@ Continue implementation verification.
     }
 }
 
+@Test func rebuildsMarkersSplitByChatGPTAccessibility() throws {
+    let markers = HandoffMarkers(nonce: "75D1D9DB216D4FB9A3A80529415491B3")
+    let renderedContent = validContent
+        .components(separatedBy: .newlines)
+        .map { $0.replacingOccurrences(of: #"^#+ "#, with: "", options: .regularExpression) }
+        .joined(separator: "\n")
+    let fragmentedWindow = """
+    prefix
+    <<
+    <AI_HANDOFF_V1_\(markers.nonce)_BEGIN>
+    >>
+    \(renderedContent)
+    <<
+    <AI_HANDOFF_V1_\(markers.nonce)_END>
+    >>
+    suffix
+    """
+
+    let extracted = try HandoffParser.extractLatest(from: fragmentedWindow)
+
+    for heading in HandoffProtocol.requiredHeadings {
+        #expect(extracted.contains(heading))
+    }
+    #expect(extracted.contains("Continue implementation verification."))
+}
+
 @Test func storeAtomicallyReplacesSingleDocument() throws {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent("handoff-store-tests-\(UUID().uuidString)", isDirectory: true)

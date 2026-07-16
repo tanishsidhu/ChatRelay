@@ -58,32 +58,52 @@ public enum HandoffValidationError: LocalizedError, Equatable {
 
 public enum HandoffParser {
     public static func extract(from text: String, markers: HandoffMarkers) throws -> String {
-        guard let beginRange = text.range(of: markers.begin, options: .backwards),
-              let endRange = text.range(
+        let normalized = normalizeProviderRenderedMarkers(in: text)
+        guard let beginRange = normalized.range(of: markers.begin, options: .backwards),
+              let endRange = normalized.range(
                 of: markers.end,
                 options: [],
-                range: beginRange.upperBound..<text.endIndex
+                range: beginRange.upperBound..<normalized.endIndex
               )
         else {
             throw HandoffValidationError.missingMarkers
         }
 
-        let content = String(text[beginRange.upperBound..<endRange.lowerBound])
+        let content = String(normalized[beginRange.upperBound..<endRange.lowerBound])
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return try validateContent(content)
     }
 
     public static func extractLatest(from text: String) throws -> String {
+        let normalized = normalizeProviderRenderedMarkers(in: text)
         let pattern = #"<<<AI_HANDOFF_V1_([A-Za-z0-9]+)_BEGIN>>>"#
         let expression = try NSRegularExpression(pattern: pattern)
-        let range = NSRange(text.startIndex..<text.endIndex, in: text)
-        guard let match = expression.matches(in: text, range: range).last,
+        let range = NSRange(normalized.startIndex..<normalized.endIndex, in: normalized)
+        guard let match = expression.matches(in: normalized, range: range).last,
               match.numberOfRanges == 2,
-              let nonceRange = Range(match.range(at: 1), in: text)
+              let nonceRange = Range(match.range(at: 1), in: normalized)
         else {
             throw HandoffValidationError.missingMarkers
         }
-        return try extract(from: text, markers: HandoffMarkers(nonce: String(text[nonceRange])))
+        return try extract(
+            from: normalized,
+            markers: HandoffMarkers(nonce: String(normalized[nonceRange]))
+        )
+    }
+
+    /// ChatGPT Accessibility often exposes `<<<token>>>` as separate nodes that become
+    /// `<<`, `<token>`, and `>>` when window text is joined. Rebuild the literal markers.
+    public static func normalizeProviderRenderedMarkers(in text: String) -> String {
+        let pattern = #"<<\s*<\s*(AI_HANDOFF_V1_[A-Za-z0-9]+_(?:BEGIN|END))\s*>\s*>>"#
+        guard let expression = try? NSRegularExpression(pattern: pattern) else {
+            return text
+        }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        return expression.stringByReplacingMatches(
+            in: text,
+            range: range,
+            withTemplate: "<<<$1>>>"
+        )
     }
 
     public static func validateContent(_ rawContent: String) throws -> String {
