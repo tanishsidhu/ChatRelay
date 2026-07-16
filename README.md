@@ -1,4 +1,7 @@
-# ChatRelay
+<h1>
+  <img src="Assets/ChatRelay.png" width="76" height="76" align="center" alt="">
+  ChatRelay
+</h1>
 
 ChatRelay is an invisible macOS helper that moves conversation context between the native ChatGPT, Claude, and Gemini apps through one Markdown file in an Obsidian vault.
 
