@@ -5,7 +5,7 @@
 
 ChatRelay is an invisible macOS helper that moves conversation context between the native ChatGPT, Claude, and Gemini apps through one Markdown file in an Obsidian vault.
 
-Type `/handoff` in one chat to save the current context. Type `/resume` in a new chat to continue from it.
+Type `\handoff` in one chat to save the current context. Type `\resume` in a new chat to continue from it.
 
 ## Requirements
 
@@ -63,7 +63,7 @@ ChatRelay has no window, Dock icon, or menu-bar item. It registers itself to sta
 In an existing conversation, type exactly:
 
 ```text
-/handoff
+\handoff
 ```
 
 Press Return. ChatRelay replaces the command with a structured context request. When the marked response is complete and valid, it atomically replaces `Handoffs/CURRENT_HANDOFF.md`.
@@ -71,14 +71,14 @@ Press Return. ChatRelay replaces the command with a structured context request. 
 In a fresh chat in another supported app, type exactly:
 
 ```text
-/resume
+\resume
 ```
 
 Press Return. ChatRelay inserts the saved handoff and submits it.
 
-These triggers do not appear in provider slash-command menus. Other slash-prefixed messages are ignored.
+These triggers use a backslash prefix so they do not collide with provider slash-command menus. Other backslash-prefixed messages are ignored.
 
-Do not use `/handoff` as the first message in an empty chat. There is no conversation to summarize, and a provider may fall back to its own saved memory.
+Do not use `\handoff` as the first message in an empty chat. There is no conversation to summarize, and a provider may fall back to its own saved memory.
 
 ## Check the installation
 

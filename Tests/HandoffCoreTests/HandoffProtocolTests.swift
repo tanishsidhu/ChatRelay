@@ -15,7 +15,7 @@ Use one local Markdown file.
 ## Preferences and Constraints
 Keep it private and local.
 ## Important Facts or Examples
-The command is `/handoff`.
+The command is `\\handoff`.
 ## Open Questions
 None.
 ## Recommended Continuation

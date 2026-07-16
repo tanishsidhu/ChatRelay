@@ -1,8 +1,8 @@
 import Foundation
 
 public enum ChatCommand: String, Codable, Equatable, Sendable {
-    case handoff = "/handoff"
-    case resume = "/resume"
+    case handoff = "\\handoff"
+    case resume = "\\resume"
 
     public static func parse(_ text: String) -> ChatCommand? {
         ChatCommand(rawValue: text.trimmingCharacters(in: .whitespacesAndNewlines))
