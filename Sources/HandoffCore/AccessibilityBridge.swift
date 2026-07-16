@@ -76,8 +76,16 @@ public enum AccessibilityBridge {
     public static func collectWindowText(processIdentifier: Int32, maximumElements: Int = 10_000) -> String {
         activateEnhancedAccessibility(processIdentifier: processIdentifier)
         let application = AXUIElementCreateApplication(processIdentifier)
-        let root = elementAttribute(application, kAXFocusedWindowAttribute) ?? application
-        var queue = [root]
+        var roots: [AXUIElement] = []
+        if let windows = elementsAttribute(application, kAXWindowsAttribute), !windows.isEmpty {
+            roots.append(contentsOf: windows)
+        } else if let focused = elementAttribute(application, kAXFocusedWindowAttribute) {
+            roots.append(focused)
+        } else {
+            roots.append(application)
+        }
+
+        var queue = roots
         var index = 0
         var strings: [String] = []
         var byteCount = 0

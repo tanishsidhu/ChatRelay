@@ -6,7 +6,11 @@ public final class ResponseScanner: @unchecked Sendable {
     private let queue = DispatchQueue(label: "io.chatrelay.ChatRelay.response-scanner")
     private var timer: DispatchSourceTimer?
     private var deadline: Date?
+    private var lastError: Error?
+    private var stableCandidate: String?
+    private var stableHits = 0
     private let lock = NSLock()
+    private let requiredStableHits = 2
 
     public init() {}
 
@@ -21,13 +25,20 @@ public final class ResponseScanner: @unchecked Sendable {
         lock.withLock {
             self.timer = timer
             deadline = Date().addingTimeInterval(timeout)
+            lastError = nil
+            stableCandidate = nil
+            stableHits = 0
         }
 
         timer.schedule(deadline: .now() + 0.5, repeating: 0.75, leeway: .milliseconds(100))
         timer.setEventHandler { [weak self] in
             guard let self else { return }
             if let deadline = lock.withLock({ self.deadline }), Date() >= deadline {
-                finish(.failure(HandoffValidationError.missingMarkers), completion: completion)
+                let storedError = lock.withLock { () -> Error? in lastError }
+                finish(
+                    .failure(storedError ?? HandoffValidationError.missingMarkers),
+                    completion: completion
+                )
                 return
             }
 
@@ -40,11 +51,27 @@ public final class ResponseScanner: @unchecked Sendable {
 
             do {
                 let content = try HandoffParser.extract(from: text, markers: markers)
-                finish(.success(content), completion: completion)
-            } catch HandoffValidationError.missingMarkers {
-                return
+                let shouldFinish = lock.withLock { () -> Bool in
+                    lastError = nil
+                    if stableCandidate == content {
+                        stableHits += 1
+                    } else {
+                        stableCandidate = content
+                        stableHits = 1
+                    }
+                    return stableHits >= requiredStableHits
+                }
+                if shouldFinish {
+                    finish(.success(content), completion: completion)
+                }
             } catch {
-                finish(.failure(error), completion: completion)
+                // ChatGPT Accessibility often exposes incomplete snapshots after the
+                // closing marker first appears. Keep polling until timeout.
+                lock.withLock {
+                    lastError = error
+                    stableCandidate = nil
+                    stableHits = 0
+                }
             }
         }
         timer.resume()
@@ -55,6 +82,9 @@ public final class ResponseScanner: @unchecked Sendable {
             let current = timer
             timer = nil
             deadline = nil
+            lastError = nil
+            stableCandidate = nil
+            stableHits = 0
             return current
         }
         existing?.cancel()
