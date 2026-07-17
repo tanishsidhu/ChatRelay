@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 public final class ResponseScanner: @unchecked Sendable {
@@ -9,6 +10,7 @@ public final class ResponseScanner: @unchecked Sendable {
     private var lastError: Error?
     private var stableCandidate: String?
     private var stableHits = 0
+    private var pollCount = 0
     private let lock = NSLock()
     /// About 3 seconds of unchanged successful extracts at the 0.75s poll interval.
     private let requiredStableHits = 4
@@ -29,6 +31,7 @@ public final class ResponseScanner: @unchecked Sendable {
             lastError = nil
             stableCandidate = nil
             stableHits = 0
+            pollCount = 0
         }
 
         timer.schedule(deadline: .now() + 0.5, repeating: 0.75, leeway: .milliseconds(100))
@@ -41,6 +44,17 @@ public final class ResponseScanner: @unchecked Sendable {
                     completion: completion
                 )
                 return
+            }
+
+            let poll = lock.withLock { () -> Int in
+                pollCount += 1
+                return pollCount
+            }
+
+            // Chromium-based chat apps often expose an empty Accessibility tree while
+            // backgrounded. Periodically raise the target so nested content stays readable.
+            if poll == 1 || poll % 8 == 0 {
+                Self.ensureTargetReadable(target)
             }
 
             let text = HandoffParser.normalizeProviderRenderedMarkers(
@@ -92,6 +106,7 @@ public final class ResponseScanner: @unchecked Sendable {
             lastError = nil
             stableCandidate = nil
             stableHits = 0
+            pollCount = 0
             return current
         }
         existing?.cancel()
@@ -100,5 +115,18 @@ public final class ResponseScanner: @unchecked Sendable {
     private func finish(_ result: Result<String, Error>, completion: @escaping Completion) {
         cancel()
         completion(result)
+    }
+
+    private static func ensureTargetReadable(_ target: ChatTarget) {
+        guard let application = NSRunningApplication(processIdentifier: target.processIdentifier),
+              !application.isTerminated
+        else {
+            return
+        }
+        AccessibilityBridge.activateEnhancedAccessibility(processIdentifier: target.processIdentifier)
+        if !application.isActive {
+            application.activate(options: [.activateIgnoringOtherApps])
+            usleep(150_000)
+        }
     }
 }
