@@ -30,7 +30,7 @@ Continue implementation verification.
     #expect(prompt.contains("AI_HANDOFF_V1_TESTNONCE_BEGIN"))
     #expect(prompt.contains(#""%%""#))
     #expect(prompt.contains("Do not add account memory"))
-    #expect(prompt.contains("Never leave an introductory line ending in a colon"))
+    #expect(prompt.contains("Do not leave a colon introduction with no details beneath it"))
 }
 
 @Test func configurationRoundTripsWithoutHardcodedUserPath() throws {
@@ -68,10 +68,18 @@ Continue implementation verification.
 @Test func rejectsIncompleteColonIntroductionsWithoutDetails() {
     let hollow = validContent.replacingOccurrences(
         of: "Use one local Markdown file.",
-        with: "The safety assessment was based on these points:\nThe prior recommendation was to:"
+        with: "The safety assessment was based on these points:"
     )
     #expect(throws: HandoffValidationError.incompleteSectionDetail("The safety assessment was based on these points:")) {
         try HandoffParser.validateContent(hollow)
+    }
+
+    let colonLabeledDetails = validContent.replacingOccurrences(
+        of: "Use one local Markdown file.",
+        with: "Point one:\nKeep the helper local.\nPoint two:\nValidate before saving."
+    )
+    #expect(throws: Never.self) {
+        try HandoffParser.validateContent(colonLabeledDetails)
     }
 }
 
@@ -180,7 +188,7 @@ Continue implementation verification.
     \(markers.end)
     """
 
-    #expect(throws: HandoffValidationError.incompleteSectionDetail("The safety assessment was based on these points:")) {
+    #expect(throws: HandoffValidationError.incompleteSectionDetail("The prior recommendation was to:")) {
         try HandoffParser.extract(from: breadthFirstBroken, markers: markers)
     }
 

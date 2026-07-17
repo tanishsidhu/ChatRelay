@@ -14,6 +14,8 @@ public final class ResponseScanner: @unchecked Sendable {
     private let lock = NSLock()
     /// About 3 seconds of unchanged successful extracts at the 0.75s poll interval.
     private let requiredStableHits = 4
+    /// Minimum hits before a timeout may still save the best complete extract.
+    private let minimumTimeoutHits = 2
 
     public init() {}
 
@@ -38,11 +40,17 @@ public final class ResponseScanner: @unchecked Sendable {
         timer.setEventHandler { [weak self] in
             guard let self else { return }
             if let deadline = lock.withLock({ self.deadline }), Date() >= deadline {
-                let storedError = lock.withLock { () -> Error? in lastError }
-                finish(
-                    .failure(storedError ?? HandoffValidationError.missingMarkers),
-                    completion: completion
-                )
+                let (candidate, hits, storedError) = lock.withLock {
+                    (stableCandidate, stableHits, lastError)
+                }
+                if let candidate, hits >= minimumTimeoutHits {
+                    finish(.success(candidate), completion: completion)
+                } else {
+                    finish(
+                        .failure(storedError ?? HandoffValidationError.missingMarkers),
+                        completion: completion
+                    )
+                }
                 return
             }
 
@@ -68,12 +76,17 @@ public final class ResponseScanner: @unchecked Sendable {
                 let content = try HandoffParser.extract(from: text, markers: markers)
                 let shouldFinish = lock.withLock { () -> Bool in
                     lastError = nil
-                    if let stableCandidate, content.utf8.count > stableCandidate.utf8.count {
-                        // Accessibility often reveals nested list details after the first
-                        // structurally valid snapshot. Prefer the longer complete extract.
-                        self.stableCandidate = content
-                        stableHits = 1
-                        return false
+                    if let stableCandidate {
+                        if content.utf8.count > stableCandidate.utf8.count {
+                            // Prefer longer complete extracts as nested details appear.
+                            self.stableCandidate = content
+                            stableHits = 1
+                            return false
+                        }
+                        if content.utf8.count < stableCandidate.utf8.count {
+                            // Ignore transient shrinks from virtualization or flaky AX reads.
+                            return false
+                        }
                     }
                     if stableCandidate == content {
                         stableHits += 1
@@ -87,11 +100,9 @@ public final class ResponseScanner: @unchecked Sendable {
                     finish(.success(content), completion: completion)
                 }
             } catch {
-                // Keep polling through partial Accessibility snapshots until timeout.
+                // Keep the best complete candidate across transient incomplete snapshots.
                 lock.withLock {
                     lastError = error
-                    stableCandidate = nil
-                    stableHits = 0
                 }
             }
         }

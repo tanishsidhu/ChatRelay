@@ -71,6 +71,16 @@ public final class HandoffCoordinator: @unchecked Sendable {
     }
 
     private func resume(target: ChatTarget) {
+        guard stateLock.withLock({
+            guard !busy else { return false }
+            busy = true
+            return true
+        }) else {
+            notify("ChatRelay busy", "Wait for the current handoff or resume to finish.")
+            return
+        }
+        defer { stateLock.withLock { busy = false } }
+
         let document: String
         do {
             document = try store.load()

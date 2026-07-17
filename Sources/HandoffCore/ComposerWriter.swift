@@ -7,6 +7,7 @@ public enum ComposerWriteError: LocalizedError, Equatable {
     case targetUnavailable
     case composerUnavailable
     case clipboardUnavailable
+    case pasteDidNotLand
     case eventCreationFailed
 
     public var errorDescription: String? {
@@ -17,6 +18,8 @@ public enum ComposerWriteError: LocalizedError, Equatable {
             "The target chat composer is no longer focused."
         case .clipboardUnavailable:
             "The helper could not prepare the local clipboard."
+        case .pasteDidNotLand:
+            "The helper pasted into the composer, but the text did not appear before submit."
         case .eventCreationFailed:
             "The helper could not create a keyboard event."
         }
@@ -25,19 +28,27 @@ public enum ComposerWriteError: LocalizedError, Equatable {
 
 public enum ComposerWriter {
     public static let syntheticEventTag: Int64 = 0x48414E444F4646
+    private static let writerLock = NSLock()
 
     public static func replaceAndSubmit(_ text: String, target: ChatTarget) throws {
+        try writerLock.withLock {
+            try replaceAndSubmitLocked(text, target: target)
+        }
+    }
+
+    private static func replaceAndSubmitLocked(_ text: String, target: ChatTarget) throws {
         guard let application = NSRunningApplication(processIdentifier: target.processIdentifier),
               !application.isTerminated
         else {
             throw ComposerWriteError.targetUnavailable
         }
+
+        application.activate()
+        usleep(150_000)
+
         guard AccessibilityBridge.focusedComposer(processIdentifier: target.processIdentifier) != nil else {
             throw ComposerWriteError.composerUnavailable
         }
-
-        application.activate()
-        usleep(120_000)
 
         let snapshot = Clipboard.snapshot()
         defer { Clipboard.restore(snapshot) }
@@ -46,13 +57,42 @@ public enum ComposerWriter {
         try postKey(keyCode: 0, flags: .maskCommand, processIdentifier: target.processIdentifier)
         usleep(80_000)
         try postKey(keyCode: 9, flags: .maskCommand, processIdentifier: target.processIdentifier)
-        usleep(180_000)
+
+        // Large pastes can land slowly or become attachments. Confirm inline text first.
+        var landed = false
+        for _ in 0..<12 {
+            usleep(100_000)
+            if let value = AccessibilityBridge.fieldValue(processIdentifier: target.processIdentifier),
+               pasteAppearsLanded(expected: text, actual: value)
+            {
+                landed = true
+                break
+            }
+        }
+        guard landed else {
+            throw ComposerWriteError.pasteDidNotLand
+        }
+
         try postKey(
             keyCode: 36,
             flags: [],
             processIdentifier: target.processIdentifier,
             syntheticTag: syntheticEventTag
         )
+    }
+
+    private static func pasteAppearsLanded(expected: String, actual: String) -> Bool {
+        let trimmedActual = actual.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedActual.count >= min(64, expected.count / 4) else {
+            return false
+        }
+        if expected.count <= 200 {
+            return trimmedActual.contains(expected.prefix(40)) || expected.contains(trimmedActual.prefix(40))
+        }
+        let needle = String(expected.prefix(80))
+        let mid = expected.index(expected.startIndex, offsetBy: expected.count / 3)
+        let midNeedle = String(expected[mid...].prefix(80))
+        return trimmedActual.contains(needle) || trimmedActual.contains(midNeedle)
     }
 
     private static func postKey(

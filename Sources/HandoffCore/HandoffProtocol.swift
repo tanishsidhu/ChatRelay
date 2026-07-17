@@ -2,7 +2,7 @@ import Foundation
 
 public enum HandoffProtocol {
     public static let schemaVersion = 1
-    public static let maximumWords = 1_500
+    public static let maximumWords = 2_000
     public static let maximumBytes = 32 * 1_024
 
     public static let requiredHeadings = [
@@ -52,7 +52,7 @@ public enum HandoffValidationError: LocalizedError, Equatable {
         case let .incompleteSectionDetail(line):
             "The generated handoff introduces details without listing them: \(line)"
         case let .tooManyWords(count):
-            "The generated handoff has \(count) words, above the 1,500 word limit."
+            "The generated handoff has \(count) words, above the 2,000 word limit."
         case let .tooManyBytes(count):
             "The generated handoff has \(count) bytes, above the 32 KB limit."
         case .invalidStoredDocument:
@@ -204,10 +204,9 @@ public enum HandoffParser {
             let next = cursor < lines.count
                 ? lines[cursor].trimmingCharacters(in: .whitespacesAndNewlines)
                 : ""
-            let nextIsHeading = next.hasPrefix("#")
-            let nextIsAnotherIntro = next.hasSuffix(":") && !next.hasPrefix("#") && !next.hasPrefix("-")
-            let missingDetails = next.isEmpty || nextIsHeading || nextIsAnotherIntro
-            if missingDetails {
+            // Only treat truly empty tails as incomplete. Colon-labeled follow-up lines
+            // (common from Claude/Gemini) are valid detail, not hollow introductions.
+            if next.isEmpty || next.hasPrefix("#") {
                 return trimmed
             }
         }

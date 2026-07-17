@@ -102,8 +102,11 @@ public enum AccessibilityBridge {
 
             for attribute in [kAXValueAttribute, kAXDescriptionAttribute, kAXTitleAttribute] {
                 if let value = stringAttribute(element, attribute), !value.isEmpty {
-                    strings.append(value)
-                    byteCount += value.lengthOfBytes(using: .utf8)
+                    // Skip duplicate Accessibility mirrors of the same visible text.
+                    if strings.last != value {
+                        strings.append(value)
+                        byteCount += value.lengthOfBytes(using: .utf8)
+                    }
                 }
             }
 
