@@ -66,7 +66,7 @@ In an existing conversation, type exactly:
 \handoff
 ```
 
-Press Return. ChatRelay replaces the command with a structured context request. When the marked response is complete and valid, it atomically replaces `Handoffs/CURRENT_HANDOFF.md`.
+Press Return. ChatRelay replaces the command with a structured context request. Keep that chat visible until you see the "Handoff saved" notification. When the marked response is complete and valid, ChatRelay atomically replaces `Handoffs/CURRENT_HANDOFF.md`.
 
 In a fresh chat in another supported app, type exactly:
 

@@ -42,7 +42,10 @@ public final class HandoffCoordinator: @unchecked Sendable {
         let prompt = HandoffPromptBuilder.handoffPrompt(markers: markers)
 
         do {
-            notify("Handoff started", "Waiting for \(target.provider.displayName) to generate the context file.")
+            notify(
+                "Handoff started",
+                "Keep \(target.provider.displayName) visible until ChatRelay saves the context file."
+            )
             try ComposerWriter.replaceAndSubmit(prompt, target: target)
         } catch {
             stateLock.withLock { busy = false }

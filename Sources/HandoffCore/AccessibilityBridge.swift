@@ -136,14 +136,6 @@ public enum AccessibilityBridge {
 
     private static func stringAttribute(_ element: AXUIElement, _ attribute: String) -> String? {
         var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else {
-            return nil
-        }
-        return value as? String
-    }
-
-    private static func textAttribute(_ element: AXUIElement, _ attribute: String) -> String? {
-        var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success,
               let value
         else {
@@ -156,6 +148,10 @@ public enum AccessibilityBridge {
             return attributed.string
         }
         return nil
+    }
+
+    private static func textAttribute(_ element: AXUIElement, _ attribute: String) -> String? {
+        stringAttribute(element, attribute)
     }
 
     private static func boolAttribute(_ element: AXUIElement, _ attribute: String) -> Bool? {

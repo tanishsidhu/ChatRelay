@@ -25,8 +25,10 @@ public struct HandoffMarkers: Equatable, Sendable {
 
     public init(nonce: String = UUID().uuidString.replacingOccurrences(of: "-", with: "")) {
         self.nonce = nonce
-        begin = "<<<AI_HANDOFF_V1_\(nonce)_BEGIN>>>"
-        end = "<<<AI_HANDOFF_V1_\(nonce)_END>>>"
+        // Percent markers avoid ChatGPT Accessibility splitting angle-bracket tokens
+        // into separate HTML-like nodes.
+        begin = "%%AI_HANDOFF_V1_\(nonce)_BEGIN%%"
+        end = "%%AI_HANDOFF_V1_\(nonce)_END%%"
     }
 }
 
@@ -34,6 +36,7 @@ public enum HandoffValidationError: LocalizedError, Equatable {
     case missingMarkers
     case emptyContent
     case missingHeading(String)
+    case incompleteSectionDetail(String)
     case tooManyWords(Int)
     case tooManyBytes(Int)
     case invalidStoredDocument
@@ -46,6 +49,8 @@ public enum HandoffValidationError: LocalizedError, Equatable {
             "The generated handoff was empty."
         case let .missingHeading(heading):
             "The generated handoff is missing \(heading)."
+        case let .incompleteSectionDetail(line):
+            "The generated handoff introduces details without listing them: \(line)"
         case let .tooManyWords(count):
             "The generated handoff has \(count) words, above the 1,500 word limit."
         case let .tooManyBytes(count):
@@ -76,34 +81,71 @@ public enum HandoffParser {
 
     public static func extractLatest(from text: String) throws -> String {
         let normalized = normalizeProviderRenderedMarkers(in: text)
-        let pattern = #"<<<AI_HANDOFF_V1_([A-Za-z0-9]+)_BEGIN>>>"#
+        let pattern = #"%%AI_HANDOFF_V1_([A-Za-z0-9]+)_BEGIN%%|<<<AI_HANDOFF_V1_([A-Za-z0-9]+)_BEGIN>>>"#
         let expression = try NSRegularExpression(pattern: pattern)
         let range = NSRange(normalized.startIndex..<normalized.endIndex, in: normalized)
-        guard let match = expression.matches(in: normalized, range: range).last,
-              match.numberOfRanges == 2,
-              let nonceRange = Range(match.range(at: 1), in: normalized)
-        else {
+        guard let match = expression.matches(in: normalized, range: range).last else {
             throw HandoffValidationError.missingMarkers
         }
+
+        let nonceRange: Range<String.Index>
+        if match.numberOfRanges > 1,
+           let first = Range(match.range(at: 1), in: normalized),
+           match.range(at: 1).location != NSNotFound
+        {
+            nonceRange = first
+        } else if match.numberOfRanges > 2,
+                  let second = Range(match.range(at: 2), in: normalized),
+                  match.range(at: 2).location != NSNotFound
+        {
+            nonceRange = second
+        } else {
+            throw HandoffValidationError.missingMarkers
+        }
+
         return try extract(
             from: normalized,
             markers: HandoffMarkers(nonce: String(normalized[nonceRange]))
         )
     }
 
-    /// ChatGPT Accessibility often exposes `<<<token>>>` as separate nodes that become
-    /// `<<`, `<token>`, and `>>` when window text is joined. Rebuild the literal markers.
+    /// Rebuild provider-fragmented markers into the literal begin/end tokens.
+    /// Supports percent markers and legacy angle-bracket markers from older chats.
     public static func normalizeProviderRenderedMarkers(in text: String) -> String {
-        let pattern = #"<<\s*<\s*(AI_HANDOFF_V1_[A-Za-z0-9]+_(?:BEGIN|END))\s*>\s*>>"#
-        guard let expression = try? NSRegularExpression(pattern: pattern) else {
-            return text
+        var result = text
+
+        let percentPattern = #"%\s*%\s*(AI_HANDOFF_V1_[A-Za-z0-9]+_(?:BEGIN|END))\s*%\s*%"#
+        if let expression = try? NSRegularExpression(pattern: percentPattern) {
+            let range = NSRange(result.startIndex..<result.endIndex, in: result)
+            result = expression.stringByReplacingMatches(
+                in: result,
+                range: range,
+                withTemplate: "%%$1%%"
+            )
         }
-        let range = NSRange(text.startIndex..<text.endIndex, in: text)
-        return expression.stringByReplacingMatches(
-            in: text,
-            range: range,
-            withTemplate: "<<<$1>>>"
-        )
+
+        let anglePattern = #"<<\s*<\s*(AI_HANDOFF_V1_[A-Za-z0-9]+_(?:BEGIN|END))\s*>\s*>>"#
+        if let expression = try? NSRegularExpression(pattern: anglePattern) {
+            let range = NSRange(result.startIndex..<result.endIndex, in: result)
+            // Convert legacy fragments into the current percent marker form.
+            result = expression.stringByReplacingMatches(
+                in: result,
+                range: range,
+                withTemplate: "%%$1%%"
+            )
+        }
+
+        let intactAnglePattern = #"<<<(AI_HANDOFF_V1_[A-Za-z0-9]+_(?:BEGIN|END))>>>"#
+        if let expression = try? NSRegularExpression(pattern: intactAnglePattern) {
+            let range = NSRange(result.startIndex..<result.endIndex, in: result)
+            result = expression.stringByReplacingMatches(
+                in: result,
+                range: range,
+                withTemplate: "%%$1%%"
+            )
+        }
+
+        return result
     }
 
     public static func validateContent(_ rawContent: String) throws -> String {
@@ -119,6 +161,10 @@ public enum HandoffParser {
             throw HandoffValidationError.missingHeading(heading)
         }
 
+        if let incomplete = firstIncompleteDetailIntroduction(in: content) {
+            throw HandoffValidationError.incompleteSectionDetail(incomplete)
+        }
+
         let wordCount = content.split(whereSeparator: { $0.isWhitespace }).count
         guard wordCount <= HandoffProtocol.maximumWords else {
             throw HandoffValidationError.tooManyWords(wordCount)
@@ -130,6 +176,42 @@ public enum HandoffParser {
         }
 
         return content
+    }
+
+    /// Detects Accessibility-truncated sections such as "based on these points:" with no
+    /// following detail lines before the next heading.
+    public static func firstIncompleteDetailIntroduction(in content: String) -> String? {
+        let lines = content.components(separatedBy: .newlines)
+        var index = 0
+        while index < lines.count {
+            let trimmed = lines[index].trimmingCharacters(in: .whitespacesAndNewlines)
+            defer { index += 1 }
+            guard !trimmed.isEmpty,
+                  !trimmed.hasPrefix("#"),
+                  trimmed.hasSuffix(":"),
+                  trimmed.count >= 12
+            else {
+                continue
+            }
+
+            var cursor = index + 1
+            while cursor < lines.count,
+                  lines[cursor].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            {
+                cursor += 1
+            }
+
+            let next = cursor < lines.count
+                ? lines[cursor].trimmingCharacters(in: .whitespacesAndNewlines)
+                : ""
+            let nextIsHeading = next.hasPrefix("#")
+            let nextIsAnotherIntro = next.hasSuffix(":") && !next.hasPrefix("#") && !next.hasPrefix("-")
+            let missingDetails = next.isEmpty || nextIsHeading || nextIsAnotherIntro
+            if missingDetails {
+                return trimmed
+            }
+        }
+        return nil
     }
 
     private static func restoreRenderedHeadings(in rawContent: String) -> String {

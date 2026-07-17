@@ -10,7 +10,8 @@ public final class ResponseScanner: @unchecked Sendable {
     private var stableCandidate: String?
     private var stableHits = 0
     private let lock = NSLock()
-    private let requiredStableHits = 2
+    /// About 3 seconds of unchanged successful extracts at the 0.75s poll interval.
+    private let requiredStableHits = 4
 
     public init() {}
 
@@ -53,6 +54,13 @@ public final class ResponseScanner: @unchecked Sendable {
                 let content = try HandoffParser.extract(from: text, markers: markers)
                 let shouldFinish = lock.withLock { () -> Bool in
                     lastError = nil
+                    if let stableCandidate, content.utf8.count > stableCandidate.utf8.count {
+                        // Accessibility often reveals nested list details after the first
+                        // structurally valid snapshot. Prefer the longer complete extract.
+                        self.stableCandidate = content
+                        stableHits = 1
+                        return false
+                    }
                     if stableCandidate == content {
                         stableHits += 1
                     } else {
@@ -65,8 +73,7 @@ public final class ResponseScanner: @unchecked Sendable {
                     finish(.success(content), completion: completion)
                 }
             } catch {
-                // ChatGPT Accessibility often exposes incomplete snapshots after the
-                // closing marker first appears. Keep polling until timeout.
+                // Keep polling through partial Accessibility snapshots until timeout.
                 lock.withLock {
                     lastError = error
                     stableCandidate = nil

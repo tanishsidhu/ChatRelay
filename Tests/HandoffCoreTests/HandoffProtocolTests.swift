@@ -28,7 +28,9 @@ Continue implementation verification.
     #expect(!prompt.contains(markers.begin))
     #expect(!prompt.contains(markers.end))
     #expect(prompt.contains("AI_HANDOFF_V1_TESTNONCE_BEGIN"))
+    #expect(prompt.contains(#""%%""#))
     #expect(prompt.contains("Do not add account memory"))
+    #expect(prompt.contains("Never leave an introductory line ending in a colon"))
 }
 
 @Test func configurationRoundTripsWithoutHardcodedUserPath() throws {
@@ -60,6 +62,16 @@ Continue implementation verification.
 @Test func rejectsMissingHeading() {
     #expect(throws: HandoffValidationError.missingHeading("## Open Questions")) {
         try HandoffParser.validateContent(validContent.replacingOccurrences(of: "## Open Questions\nNone.\n", with: ""))
+    }
+}
+
+@Test func rejectsIncompleteColonIntroductionsWithoutDetails() {
+    let hollow = validContent.replacingOccurrences(
+        of: "Use one local Markdown file.",
+        with: "The safety assessment was based on these points:\nThe prior recommendation was to:"
+    )
+    #expect(throws: HandoffValidationError.incompleteSectionDetail("The safety assessment was based on these points:")) {
+        try HandoffParser.validateContent(hollow)
     }
 }
 
@@ -168,13 +180,24 @@ Continue implementation verification.
     \(markers.end)
     """
 
-    let broken = try HandoffParser.extract(from: breadthFirstBroken, markers: markers)
-    #expect(!broken.contains("MIT licensed"))
-    #expect(!broken.contains("Homebrew"))
+    #expect(throws: HandoffValidationError.incompleteSectionDetail("The safety assessment was based on these points:")) {
+        try HandoffParser.extract(from: breadthFirstBroken, markers: markers)
+    }
 
     let extracted = try HandoffParser.extract(from: documentOrder, markers: markers)
     #expect(extracted.contains("MIT licensed"))
     #expect(extracted.contains("Homebrew"))
+}
+
+@Test func recoversLegacyAngleBracketMarkers() throws {
+    let nonce = "LEGACYANGLE1"
+    let legacy = """
+    <<<AI_HANDOFF_V1_\(nonce)_BEGIN>>>
+    \(validContent)
+    <<<AI_HANDOFF_V1_\(nonce)_END>>>
+    """
+    let extracted = try HandoffParser.extractLatest(from: legacy)
+    #expect(extracted.contains("Continue implementation verification."))
 }
 
 @Test func storeAtomicallyReplacesSingleDocument() throws {

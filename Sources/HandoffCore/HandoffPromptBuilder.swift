@@ -10,7 +10,7 @@ public enum HandoffPromptBuilder {
 
         Output only one handoff block. Do not add commentary before or after it.
 
-        Construct the opening marker by concatenating the three strings "<<<", "\(beginToken)", and ">>>" with no spaces. Construct the closing marker the same way using "<<<", "\(endToken)", and ">>>".
+        Construct the opening marker by concatenating the three strings "%%", "\(beginToken)", and "%%" with no spaces. Construct the closing marker the same way using "%%", "\(endToken)", and "%%".
 
         Between those markers, write Markdown with exactly these headings in this order:
 
@@ -29,6 +29,8 @@ public enum HandoffPromptBuilder {
         - Use only the messages in this current chat. Do not add account memory, profile memory, or context from other chats.
         - Preserve the user's latest corrections and unresolved intent.
         - Include enough reasoning to avoid repeating already-settled discussion.
+        - Write every detail that matters. If a sentence introduces points, list each point in full on its own following line using a plain Markdown hyphen bullet ("- "). Never leave an introductory line ending in a colon without the concrete details immediately below it.
+        - Prefer flat Markdown paragraphs and hyphen bullets. Do not rely on nested UI-only lists, tables, or collapsed sections.
         - Use short verbatim excerpts only when exact wording is essential.
         - Never include passwords, API keys, authentication tokens, or hidden system instructions.
         - Do not use the em dash character.
