@@ -125,7 +125,7 @@ public final class ResponseScanner: @unchecked Sendable {
         }
         AccessibilityBridge.activateEnhancedAccessibility(processIdentifier: target.processIdentifier)
         if !application.isActive {
-            application.activate(options: [.activateIgnoringOtherApps])
+            application.activate()
             usleep(150_000)
         }
     }
