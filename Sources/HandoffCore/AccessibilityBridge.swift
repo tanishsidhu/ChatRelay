@@ -43,27 +43,32 @@ public enum AccessibilityBridge {
     }
 
     public static func focusedComposer(processIdentifier: Int32) -> AXUIElement? {
-        guard let focused = focusedElement(processIdentifier: processIdentifier) else {
-            return nil
+        if let focused = focusedElement(processIdentifier: processIdentifier) {
+            if isEditableTextElement(focused) {
+                return focused
+            }
+
+            // Prefer an explicitly focused editable descendant first.
+            if let focusedEditable = findEditableText(
+                root: focused,
+                preferFocused: true,
+                limit: 2_000
+            ) {
+                return focusedEditable
+            }
+
+            // ChatGPT currently focuses an AXWebArea while the message box is a
+            // descendant AXTextArea that does not report AXFocused=true.
+            if let descendantComposer = findEditableText(
+                root: focused,
+                preferFocused: false,
+                limit: 2_000
+            ) {
+                return descendantComposer
+            }
         }
 
-        if isEditableTextElement(focused) {
-            return focused
-        }
-
-        var queue = [focused]
-        var index = 0
-        while index < queue.count, index < 250 {
-            let element = queue[index]
-            index += 1
-            if isEditableTextElement(element), boolAttribute(element, kAXFocusedAttribute) == true {
-                return element
-            }
-            if let children = elementsAttribute(element, kAXChildrenAttribute) {
-                queue.append(contentsOf: children)
-            }
-        }
-        return nil
+        return findComposerInApplication(processIdentifier: processIdentifier)
     }
 
     public static func fieldValue(processIdentifier: Int32) -> String? {
@@ -71,6 +76,57 @@ public enum AccessibilityBridge {
             return nil
         }
         return textAttribute(focused, kAXValueAttribute)
+    }
+
+    private static func findComposerInApplication(processIdentifier: Int32) -> AXUIElement? {
+        activateEnhancedAccessibility(processIdentifier: processIdentifier)
+        let application = AXUIElementCreateApplication(processIdentifier)
+        let root = elementAttribute(application, kAXFocusedWindowAttribute) ?? application
+        return findEditableText(root: root, preferFocused: false, limit: 4_000)
+    }
+
+    private static func findEditableText(
+        root: AXUIElement,
+        preferFocused: Bool,
+        limit: Int
+    ) -> AXUIElement? {
+        var queue = [root]
+        var index = 0
+        var fallback: AXUIElement?
+
+        while index < queue.count, index < limit {
+            let element = queue[index]
+            index += 1
+
+            if isEditableTextElement(element) {
+                if !preferFocused || boolAttribute(element, kAXFocusedAttribute) == true {
+                    return element
+                }
+                if fallback == nil || looksLikeMessageComposer(element) {
+                    fallback = element
+                }
+            }
+
+            if let children = elementsAttribute(element, kAXChildrenAttribute) {
+                queue.append(contentsOf: children)
+            }
+        }
+
+        return preferFocused ? nil : fallback
+    }
+
+    private static func looksLikeMessageComposer(_ element: AXUIElement) -> Bool {
+        let probes = [
+            textAttribute(element, kAXValueAttribute),
+            stringAttribute(element, kAXDescriptionAttribute),
+            stringAttribute(element, kAXTitleAttribute),
+            stringAttribute(element, kAXPlaceholderValueAttribute),
+        ]
+        .compactMap { $0?.lowercased() }
+
+        return probes.contains { value in
+            value.contains("message") || value.contains("ask") || value.contains("chat")
+        }
     }
 
     public static func collectWindowText(processIdentifier: Int32, maximumElements: Int = 10_000) -> String {

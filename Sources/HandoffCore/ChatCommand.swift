@@ -5,7 +5,22 @@ public enum ChatCommand: String, Codable, Equatable, Sendable {
     case resume = "\\resume"
 
     public static func parse(_ text: String) -> ChatCommand? {
-        ChatCommand(rawValue: text.trimmingCharacters(in: .whitespacesAndNewlines))
+        let normalized = text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            // ChatGPT sometimes keeps a leading newline from the composer placeholder.
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\u{200B}\u{FEFF}"))
+        if let command = ChatCommand(rawValue: normalized) {
+            return command
+        }
+        // Accept the legacy slash form so older muscle memory still works.
+        switch normalized {
+        case "/handoff":
+            return .handoff
+        case "/resume":
+            return .resume
+        default:
+            return nil
+        }
     }
 }
 
